@@ -1,0 +1,740 @@
+1. Project Structure Setup
+   - Create a standard dbt project structure
+   - Organize models into staging, intermediate, and mart layers
+   - Set up a consistent naming convention (e.g., stg_*, int_*, mart_*)
+
+2. Source Configuration
+   - Define sources in YAML files (sources.yml)
+   - Document source tables and columns
+   - Include tests for source freshness and validity
+
+3. Model Development
+   - Start with staging models
+     * Clean and standardize raw data
+     * Apply consistent column naming
+     * Add basic data quality tests
+   - Create intermediate models
+     * Join related staging models
+     * Apply business logic transformations
+   - Build final mart models
+     * Aggregate and summarize data
+     * Create business-specific views
+
+4. Testing Strategy
+   - Implement schema tests (unique, not_null, relationships)
+   - Add custom data quality tests
+   - Create integration tests for complex transformations
+   - Document test coverage
+
+5. Documentation
+   - Add column descriptions in YAML files
+   - Document business logic and assumptions
+   - Include model lineage information
+   - Maintain README files for each directory
+
+6. Version Control
+   - Use git for version control
+   - Follow branching strategy
+   - Create meaningful commit messages
+   - Review changes before merging
+
+7. Deployment Automation
+   - Set up CI/CD pipeline
+   - Include automated testing
+   - Configure environment-specific variables
+   - Schedule regular runs
+
+8. Performance Optimization
+   - Use incremental models where appropriate
+   - Implement efficient SQL patterns
+   - Monitor query performance
+   - Optimize model dependencies
+
+9. Maintenance
+   - Regular code reviews
+   - Update dependencies
+   - Monitor job logs
+   - Clean up deprecated models
+
+10. Best Practices for SQL Development
+    - Use CTEs for readability
+    - Follow SQL style guide
+    - Comment complex logic
+    - Use consistent formatting
+    - Leverage dbt macros for reusability
+	
+	
+---------------------------------------------------
+
+1.
+import os
+import yaml
+import shutil
+from pathlib import Path
+
+def create_dbt_project_structure(project_name: str, root_path: str):
+    """
+    Creates a standard DBT project structure
+    
+    Args:
+        project_name: Name of the DBT project
+        root_path: Root directory where project will be created
+    """
+    # Create root project directory
+    project_dir = Path(root_path) / project_name
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    # Define standard DBT directories
+    directories = [
+        'models',
+        'models/staging',
+        'models/intermediate',
+        'models/marts',
+        'seeds',
+        'macros',
+        'tests',
+        'analyses',
+        'snapshots',
+        'docs'
+    ]
+
+    # Create directories
+    for dir_name in directories:
+        (project_dir / dir_name).mkdir(parents=True, exist_ok=True)
+
+    # Create dbt_project.yml
+    project_config = {
+        'name': project_name,
+        'version': '1.0.0',
+        'config-version': 2,
+        'profile': project_name,
+        
+        'model-paths': ['models'],
+        'seed-paths': ['seeds'],
+        'test-paths': ['tests'],
+        'analysis-paths': ['analyses'],
+        'macro-paths': ['macros'],
+        'snapshot-paths': ['snapshots'],
+        
+        'models': {
+            project_name: {
+                'materialized': 'table',
+                'staging': {
+                    'materialized': 'view'
+                }
+            }
+        }
+    }
+
+    with open(project_dir / 'dbt_project.yml', 'w') as f:
+        yaml.dump(project_config, f, default_flow_style=False)
+
+    # Create packages.yml
+    packages_config = {
+        'packages': [
+            {'package': 'dbt-labs/dbt_utils', 'version': '1.0.0'}
+        ]
+    }
+
+    with open(project_dir / 'packages.yml', 'w') as f:
+        yaml.dump(packages_config, f, default_flow_style=False)
+
+    # Create .gitignore
+    gitignore_content = """
+target/
+dbt_packages/
+logs/
+.user.yml
+"""
+    with open(project_dir / '.gitignore', 'w') as f:
+        f.write(gitignore_content.strip())
+
+    print(f"Created DBT project structure at: {project_dir}")
+
+if __name__ == "__main__":
+    # Example usage
+    create_dbt_project_structure(
+        project_name="my_dbt_project",
+        root_path="./projects"
+    )
+
+
+
+import os
+import yaml
+from pathlib import Path
+from typing import List, Dict
+
+def create_dbt_project_structure(project_name: str, root_path: str) -> str:
+    """
+    Creates a standard DBT project structure
+    
+    Args:
+        project_name: Name of the DBT project
+        root_path: Root directory where project will be created
+    Returns:
+        str: Path to the created project directory
+    """
+    # Create root project directory
+    project_dir = Path(root_path) / project_name
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    # Define standard DBT directories
+    directories = [
+        'models',
+        'models/staging',
+        'models/intermediate',
+        'models/marts',
+        'seeds',
+        'macros',
+        'tests',
+        'analyses',
+        'snapshots',
+        'docs'
+    ]
+
+    # Create directories
+    for dir_name in directories:
+        (project_dir / dir_name).mkdir(parents=True, exist_ok=True)
+
+    # Create dbt_project.yml
+    project_config = {
+        'name': project_name,
+        'version': '1.0.0',
+        'config-version': 2,
+        'profile': project_name,
+        
+        'model-paths': ['models'],
+        'seed-paths': ['seeds'],
+        'test-paths': ['tests'],
+        'analysis-paths': ['analyses'],
+        'macro-paths': ['macros'],
+        'snapshot-paths': ['snapshots'],
+        
+        'models': {
+            project_name: {
+                'materialized': 'table',
+                'staging': {
+                    'materialized': 'view'
+                }
+            }
+        }
+    }
+
+    with open(project_dir / 'dbt_project.yml', 'w') as f:
+        yaml.dump(project_config, f, default_flow_style=False)
+    
+    return str(project_dir)
+
+def create_dbt_models(
+    project_dir: str,
+    source_tables: List[Dict],
+    intermediate_models: Dict[str, str],
+    mart_models: Dict[str, str]
+):
+    """
+    Creates DBT models using provided source tables and SQL content
+    
+    Args:
+        project_dir: DBT project directory path
+        source_tables: List of dictionaries containing source table configurations
+        intermediate_models: Dictionary with model name as key and SQL content as value
+        mart_models: Dictionary with model name as key and SQL content as value
+    """
+    models_dir = Path(project_dir) / 'models'
+    
+    # Create sources.yml
+    sources_config = {
+        'version': 2,
+        'sources': source_tables
+    }
+    
+    with open(models_dir / 'sources.yml', 'w') as f:
+        yaml.dump(sources_config, f, default_flow_style=False)
+
+    # Create staging models
+    for table in source_tables:
+        source_name = table['name']
+        staging_dir = models_dir / 'staging'
+        
+        sql_content = f"""
+with source as (
+    select * from {{{{ source('{table['source']}', '{source_name}') }}}}
+),
+
+staged as (
+    select
+        -- Add your transformations here
+        *
+    from source
+)
+
+select * from staged
+"""
+        with open(staging_dir / f'stg_{source_name}.sql', 'w') as f:
+            f.write(sql_content.strip())
+
+    # Create intermediate models from provided SQL
+    intermediate_dir = models_dir / 'intermediate'
+    for model_name, sql_content in intermediate_models.items():
+        with open(intermediate_dir / f'{model_name}.sql', 'w') as f:
+            f.write(sql_content.strip())
+
+    # Create mart models from provided SQL
+    mart_dir = models_dir / 'marts'
+    for model_name, sql_content in mart_models.items():
+        with open(mart_dir / f'{model_name}.sql', 'w') as f:
+            f.write(sql_content.strip())
+
+# Example usage
+if __name__ == "__main__":
+    # Create project structure
+    project_name = "my_dbt_project"
+    root_path = "./projects"
+    project_dir = create_dbt_project_structure(project_name, root_path)
+    
+    # Example source tables
+    source_tables = [
+        {
+            'name': 'customers',
+            'source': 'raw_data',
+            'loaded_at_field': 'updated_at',
+            'tables': ['customers']
+        },
+        {
+            'name': 'orders',
+            'source': 'raw_data',
+            'loaded_at_field': 'updated_at',
+            'tables': ['orders']
+        }
+    ]
+    
+    # Example intermediate models with full SQL
+    intermediate_models = {
+        'int_customers': """
+with staged_customers as (
+    select * from {{ ref('stg_customers') }}
+)
+
+select 
+    customer_id,
+    first_name,
+    last_name,
+    email
+from staged_customers
+""",
+        'int_orders': """
+with staged_orders as (
+    select * from {{ ref('stg_orders') }}
+)
+
+select 
+    order_id,
+    customer_id,
+    order_date,
+    status
+from staged_orders
+"""
+    }
+    
+    # Example mart models with full SQL
+    mart_models = {
+        'customer_orders': """
+with customers as (
+    select * from {{ ref('int_customers') }}
+),
+
+orders as (
+    select * from {{ ref('int_orders') }}
+),
+
+final as (
+    select 
+        c.customer_id,
+        c.first_name,
+        c.last_name,
+        count(o.order_id) as total_orders
+    from customers c
+    left join orders o on c.customer_id = o.customer_id
+    group by 1, 2, 3
+)
+
+select * from final
+"""
+    }
+    
+    # Create all models
+    create_dbt_models(
+        project_dir,
+        source_tables,
+        intermediate_models,
+        mart_models
+    )
+	
+
+import os
+import yaml
+from pathlib import Path
+from typing import List, Dict
+import sqlalchemy as sa
+from sqlalchemy import create_engine, inspect
+
+def get_table_metadata(engine: sa.Engine, schema: str, table: str) -> Dict:
+    """
+    Fetches table metadata including column names and data types from the database
+    
+    Args:
+        engine: SQLAlchemy engine
+        schema: Database schema name
+        table: Table name
+    
+    Returns:
+        Dictionary containing table metadata
+    """
+    inspector = inspect(engine)
+    columns = inspector.get_columns(table, schema=schema)
+    primary_keys = inspector.get_pk_constraint(table, schema=schema)['constrained_columns']
+    
+    column_configs = []
+    for col in columns:
+        tests = []
+        if col['name'] in primary_keys:
+            tests.extend(['unique', 'not_null'])
+        
+        column_config = {
+            'name': col['name'],
+            'description': f"Column type: {str(col['type'])}",
+            'tests': tests
+        }
+        column_configs.append(column_config)
+    
+    return {
+        'name': table,
+        'description': f'Auto-generated configuration for {schema}.{table}',
+        'columns': column_configs
+    }
+
+def create_sources_yaml_from_db(
+    project_dir: str,
+    connection_string: str,
+    source_configs: List[Dict]
+) -> None:
+    """
+    Creates a sources.yml file by fetching metadata from the database
+    
+    Args:
+        project_dir: DBT project directory path
+        connection_string: Database connection string
+        source_configs: List of source configurations with schema and table information
+    """
+    engine = create_engine(connection_string)
+    models_dir = Path(project_dir) / 'models'
+    
+    sources_config = {
+        'version': 2,
+        'sources': []
+    }
+    
+    try:
+        for source in source_configs:
+            source_config = {
+                'name': source['name'],
+                'description': source.get('description', ''),
+                'database': source.get('database', ''),
+                'schema': source['schema'],
+                'tables': []
+            }
+            
+            # Fetch metadata for each table in the source
+            for table in source['tables']:
+                table_metadata = get_table_metadata(
+                    engine=engine,
+                    schema=source['schema'],
+                    table=table['name']
+                )
+                
+                # Merge user-provided configuration with database metadata
+                table_config = {
+                    **table_metadata,
+                    'freshness': table.get('freshness', {
+                        'warn_after': {'count': 24, 'period': 'hour'},
+                        'error_after': {'count': 48, 'period': 'hour'}
+                    }),
+                    'loaded_at_field': table.get('loaded_at_field', 'updated_at')
+                }
+                source_config['tables'].append(table_config)
+                
+            sources_config['sources'].append(source_config)
+        
+        # Create sources.yml file
+        os.makedirs(models_dir, exist_ok=True)
+        with open(models_dir / 'sources.yml', 'w') as f:
+            yaml.dump(sources_config, f, default_flow_style=False, sort_keys=False)
+            
+    finally:
+        engine.dispose()
+
+# Example usage
+if __name__ == "__main__":
+    # Database connection string
+    connection_string = "postgresql://user:password@localhost:5432/database"
+    
+    # Example source configuration
+    source_configs = [
+        {
+            'name': 'raw_data',
+            'description': 'Raw data from our operational database',
+            'database': 'production',
+            'schema': 'public',
+            'tables': [
+                {
+                    'name': 'customers',
+                    'freshness': {
+                        'warn_after': {'count': 12, 'period': 'hour'},
+                        'error_after': {'count': 24, 'period': 'hour'}
+                    },
+                    'loaded_at_field': 'updated_at'
+                },
+                {
+                    'name': 'orders',
+                    'freshness': {
+                        'warn_after': {'count': 6, 'period': 'hour'},
+                        'error_after': {'count': 12, 'period': 'hour'}
+                    },
+                    'loaded_at_field': 'created_at'
+                }
+            ]
+        },
+        {
+            'name': 'external_data',
+            'description': 'Data from external sources',
+            'database': 'external',
+            'schema': 'public',
+            'tables': [
+                {
+                    'name': 'exchange_rates',
+                    'freshness': {
+                        'warn_after': {'count': 1, 'period': 'day'},
+                        'error_after': {'count': 2, 'period': 'day'}
+                    },
+                    'loaded_at_field': 'loaded_at'
+                }
+            ]
+        }
+    ]
+    
+    # Create sources.yml in your DBT project with metadata from database
+    project_dir = "./my_dbt_project"
+    create_sources_yaml_from_db(
+        project_dir=project_dir,
+        connection_string=connection_string,
+        source_configs=source_configs
+    )
+
+
+
+
+
+
+
+import os
+import yaml
+from pathlib import Path
+from typing import Dict, Optional
+import re
+
+class DbtProjectGenerator:
+    def __init__(self, project_name: str, project_dir: str):
+        """
+        Initialize DBT project generator
+        
+        Args:
+            project_name: Name of the DBT project
+            project_dir: Directory where project will be created
+        """
+        self.project_name = project_name
+        self.project_dir = Path(project_dir)
+        
+    def create_project_structure(self):
+        """Creates the basic DBT project structure"""
+        # Create main project directories
+        dirs = [
+            'models/staging',
+            'models/intermediate',
+            'models/mart',
+            'macros',
+            'tests',
+            'seeds',
+            'analyses',
+            'snapshots'
+        ]
+        
+        for dir_path in dirs:
+            os.makedirs(self.project_dir / dir_path, exist_ok=True)
+            
+        # Create dbt_project.yml
+        project_config = {
+            'name': self.project_name,
+            'version': '1.0.0',
+            'config-version': 2,
+            'profile': self.project_name,
+            
+            'model-paths': ['models'],
+            'seed-paths': ['seeds'],
+            'test-paths': ['tests'],
+            'analysis-paths': ['analyses'],
+            'macro-paths': ['macros'],
+            'snapshot-paths': ['snapshots'],
+            
+            'models': {
+                self.project_name: {
+                    'staging': {
+                        'materialized': 'table'
+                    },
+                    'intermediate': {
+                        'materialized': 'table'
+                    },
+                    'mart': {
+                        'materialized': 'table'
+                    }
+                }
+            }
+        }
+        
+        with open(self.project_dir / 'dbt_project.yml', 'w') as f:
+            yaml.dump(project_config, f, default_flow_style=False, sort_keys=False)
+            
+    def create_model_from_sql(
+        self,
+        sql_content: str,
+        model_name: str,
+        layer: str,
+        config: Optional[Dict] = None
+    ) -> None:
+        """
+        Creates a model file from SQL content
+        
+        Args:
+            sql_content: SQL query content
+            model_name: Name of the model
+            layer: Model layer (staging/intermediate/mart)
+            config: Optional model configurations
+        """
+        # Validate layer
+        valid_layers = ['staging', 'intermediate', 'mart']
+        if layer not in valid_layers:
+            raise ValueError(f"Layer must be one of {valid_layers}")
+            
+        # Clean model name
+        model_name = re.sub(r'[^a-zA-Z0-9_]', '_', model_name)
+        
+        # Prepare model content
+        model_content = []
+        
+        # Add config block if provided
+        if config:
+            config_yaml = yaml.dump({'config': config}, default_flow_style=False)
+            model_content.extend([
+                '{{ config(',
+                f'{config_yaml}'.replace('config:', '').strip(),
+                ') }}'
+            ])
+            
+        # Add SQL content
+        model_content.append(sql_content.strip())
+        
+        # Write model file
+        model_path = self.project_dir / 'models' / layer / f'{model_name}.sql'
+        with open(model_path, 'w') as f:
+            f.write('\n\n'.join(model_content))
+
+def create_dbt_models_from_file(
+    project_name: str,
+    project_dir: str,
+    models_file: str
+) -> None:
+    """
+    Creates DBT models from a YAML file containing model definitions
+    
+    Args:
+        project_name: Name of the DBT project
+        project_dir: Directory where project will be created
+        models_file: Path to YAML file containing model definitions
+    """
+    # Initialize project generator
+    generator = DbtProjectGenerator(project_name, project_dir)
+    
+    # Create project structure
+    generator.create_project_structure()
+    
+    # Read and process models file
+    with open(models_file, 'r') as f:
+        models_config = yaml.safe_load(f)
+    
+    # Create models
+    for model in models_config['models']:
+        generator.create_model_from_sql(
+            sql_content=model['sql'],
+            model_name=model['name'],
+            layer=model['layer'],
+            config=model.get('config')
+        )
+
+# Example usage
+if __name__ == "__main__":
+    # Example models.yml file structure:
+    """
+    models:
+      - name: stg_customers
+        layer: staging
+        sql: |
+          SELECT 
+            customer_id,
+            first_name,
+            last_name,
+            email
+          FROM {{ source('raw_data', 'customers') }}
+        config:
+          materialized: view
+          tags: ['staging', 'daily']
+          
+      - name: int_customer_orders
+        layer: intermediate
+        sql: |
+          SELECT 
+            c.customer_id,
+            COUNT(o.order_id) as total_orders,
+            SUM(o.amount) as total_amount
+          FROM {{ ref('stg_customers') }} c
+          LEFT JOIN {{ ref('stg_orders') }} o
+            ON c.customer_id = o.customer_id
+          GROUP BY c.customer_id
+        config:
+          materialized: table
+          tags: ['intermediate']
+    """
+    
+    create_dbt_models_from_file(
+        project_name="my_analytics",
+        project_dir="./my_dbt_project",
+        models_file="models.yml"
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+
