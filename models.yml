@@ -1,0 +1,17 @@
+models:
+      - name: stg_customers
+        layer: staging
+        sql: sql/stg_customers.sql
+        config:
+          materialized: view
+          tags: ['staging', 'daily']
+          schema: staging
+          
+      - name: int_customer_orders
+        layer: intermediate
+        sql: sql/int_customer_orders.sql
+        config:
+          materialized: table
+          tags: ['intermediate']
+          schema: intermediate
+          unique_key: customer_id

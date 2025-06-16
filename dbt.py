@@ -27,9 +27,12 @@ class DbtProjectGenerator:
         base_dirs = [
             'macros',
             'tests',
+            'target',
             'seeds',
             'analyses',
-            'snapshots'
+            'snapshots',
+            'configs',
+            'logs'
         ]
         
         # Create base directories
@@ -39,6 +42,13 @@ class DbtProjectGenerator:
         # Create model directories for each layer
         for layer in layers:
             os.makedirs(self.project_dir / 'models' / layer, exist_ok=True)
+            
+        # Create requirements.txt in configs directory
+        requirements_content = """dbt-core==1.7.10
+dbt-trino==1.7.1"""
+        
+        with open(self.project_dir / 'configs' / 'requirements.txt', 'w') as f:
+            f.write(requirements_content)
             
         # Create dbt_project.yml
         project_config = {
@@ -173,7 +183,7 @@ def load_models_config(config_file: str) -> Dict:
 # Example usage
 if __name__ == "__main__":
     # Load configuration from YAML file
-    models_config = load_models_config('test.yml')
+    models_config = load_models_config('models.yml')
     
     # Generate DBT project
     generate_dbt_project(
