@@ -13,7 +13,8 @@ class DbtProjectGenerator:
             project_name: Name of the DBT project
             project_dir: Directory where project will be created
         """
-        self.project_name = project_name
+        # Clean project name to be DBT compatible by replacing spaces with underscores
+        self.project_name = project_name.replace(' ', '_')
         self.project_dir = Path(project_dir)
         
     def create_project_structure(self, layers: Set[str]):
@@ -50,12 +51,45 @@ dbt-trino==1.7.1"""
         with open(self.project_dir / 'configs' / 'requirements.txt', 'w') as f:
             f.write(requirements_content)
             
+        # Create .dbt directory in the correct location
+        dbt_dir = Path('/opt/app-root/src/.dbt')
+        dbt_dir.mkdir(parents=True, exist_ok=True)
+            
+        # Create profiles.yml in .dbt directory
+        profiles_config = {
+            self.project_name: {  # Use project name from instance
+                'target': 'dev',
+                'outputs': {
+                    'dev': {
+                        'type': 'trino',
+                        'host': 'localhost',
+                        'port': 8080,
+                        'user': 'admin',
+                        'password': 'admin',
+                        'catalog': 'hive',
+                        'schema': 'default',
+                        'threads': 4
+                    }
+                }
+            }
+        }
+        
+        profiles_file = dbt_dir / 'profiles.yml'
+        with open(profiles_file, 'w') as f:
+            yaml.dump(profiles_config, f, default_flow_style=False, sort_keys=False)
+            
         # Create dbt_project.yml
         project_config = {
-            'name': self.project_name,
+            'name': self.project_name,  # Use project name from instance
             'version': '1.0.0',
             'config-version': 2,
-            'profile': self.project_name,
+            'profile': self.project_name,  # Use project name from instance
+            
+            'target-path': 'target',
+            'clean-targets': [
+                'target',
+                'dbt_packages'
+            ],
             
             'model-paths': ['models'],
             'seed-paths': ['seeds'],
@@ -65,7 +99,7 @@ dbt-trino==1.7.1"""
             'snapshot-paths': ['snapshots'],
             
             'models': {
-                self.project_name: {
+                self.project_name: {  # Use project name from instance
                     layer: {
                         'materialized': 'table',
                         'schema': layer
@@ -105,10 +139,20 @@ dbt-trino==1.7.1"""
             if 'schema' not in config:
                 config['schema'] = layer
                 
-            config_yaml = yaml.dump({'config': config}, default_flow_style=False)
+            # Format config parameters with proper comma separation
+            config_params = []
+            for key, value in config.items():
+                if isinstance(value, str):
+                    config_params.append(f"{key}='{value}'")
+                elif isinstance(value, list):
+                    config_params.append(f"{key}={value}")
+                else:
+                    config_params.append(f"{key}={value}")
+            
+            config_str = ',\n    '.join(config_params)
             model_content.extend([
                 '{{ config(',
-                f'{config_yaml}'.replace('config:', '').strip(),
+                f'    {config_str}',
                 ') }}'
             ])
             
@@ -187,7 +231,7 @@ if __name__ == "__main__":
     
     # Generate DBT project
     generate_dbt_project(
-        project_name="my_analytics",
+        project_name="my_analytics",  # Use underscore in project name
         project_dir="./my_dbt_project",
         models_config=models_config,
         sql_base_dir="."  # Base directory containing SQL files
