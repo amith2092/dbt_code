@@ -1,7 +1,7 @@
 import os
 import yaml
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Set
 import re
 
 class DbtProjectGenerator:
@@ -16,13 +16,15 @@ class DbtProjectGenerator:
         self.project_name = project_name
         self.project_dir = Path(project_dir)
         
-    def create_project_structure(self):
-        """Creates the basic DBT project structure"""
+    def create_project_structure(self, layers: Set[str]):
+        """
+        Creates the basic DBT project structure
+        
+        Args:
+            layers: Set of layer names to create directories for
+        """
         # Create main project directories
-        dirs = [
-            'models/staging',
-            'models/intermediate',
-            'models/mart',
+        base_dirs = [
             'macros',
             'tests',
             'seeds',
@@ -30,8 +32,13 @@ class DbtProjectGenerator:
             'snapshots'
         ]
         
-        for dir_path in dirs:
+        # Create base directories
+        for dir_path in base_dirs:
             os.makedirs(self.project_dir / dir_path, exist_ok=True)
+            
+        # Create model directories for each layer
+        for layer in layers:
+            os.makedirs(self.project_dir / 'models' / layer, exist_ok=True)
             
         # Create dbt_project.yml
         project_config = {
@@ -49,18 +56,10 @@ class DbtProjectGenerator:
             
             'models': {
                 self.project_name: {
-                    'staging': {
-                        'materialized': 'view',
-                        'schema': 'staging'
-                    },
-                    'intermediate': {
+                    layer: {
                         'materialized': 'table',
-                        'schema': 'intermediate'
-                    },
-                    'mart': {
-                        'materialized': 'table',
-                        'schema': 'mart'
-                    }
+                        'schema': layer
+                    } for layer in layers
                 }
             }
         }
@@ -84,11 +83,6 @@ class DbtProjectGenerator:
             layer: Model layer (staging/intermediate/mart)
             config: Optional model configurations
         """
-        # Validate layer
-        valid_layers = ['staging', 'intermediate', 'mart']
-        if layer not in valid_layers:
-            raise ValueError(f"Layer must be one of {valid_layers}")
-            
         # Clean model name
         model_name = re.sub(r'[^a-zA-Z0-9_]', '_', model_name)
         
@@ -134,8 +128,11 @@ def generate_dbt_project(
     # Initialize project generator
     generator = DbtProjectGenerator(project_name, project_dir)
     
-    # Create project structure
-    generator.create_project_structure()
+    # Extract unique layers from configuration
+    layers = {model['layer'] for model in models_config['models']}
+    
+    # Create project structure with dynamic layers
+    generator.create_project_structure(layers)
     
     # Create models
     for model in models_config['models']:
