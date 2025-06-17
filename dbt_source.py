@@ -113,55 +113,6 @@ class DbtProjectGenerator:
         if sources_config:
             self.create_source_yml(sources_config)
             
-    def create_model_yml(self, layer: str, models_config: Dict):
-        """
-        Creates model.yml file with model definitions and references
-        
-        Args:
-            layer: Model layer (staging/intermediate/mart)
-            models_config: Dictionary containing model configurations
-        """
-        model_yml_path = self.project_dir / 'models' / layer / 'model.yml'
-        
-        # Format models configuration
-        models_content = {
-            'version': 2,
-            'models': []
-        }
-        
-        # Filter models for the current layer
-        layer_models = [m for m in models_config['models'] if m['layer'] == layer]
-        
-        for model in layer_models:
-            model_def = {
-                'name': model['name'],
-                'description': model.get('description', ''),
-                'columns': []
-            }
-            
-            # Add config if provided
-            if 'config' in model:
-                model_def['config'] = model['config']
-            
-            # Add columns if provided
-            for column in model.get('columns', []):
-                column_def = {
-                    'name': column['name'],
-                    'description': column.get('description', ''),
-                    'tests': column.get('tests', [])
-                }
-                model_def['columns'].append(column_def)
-            
-            # Add references if provided
-            if 'refs' in model:
-                model_def['refs'] = model['refs']
-            
-            models_content['models'].append(model_def)
-        
-        # Write model.yml file
-        with open(model_yml_path, 'w') as f:
-            yaml.dump(models_content, f, default_flow_style=False, sort_keys=False)
-            
     def create_model_from_sql(
         self,
         sql_content: str,
@@ -254,10 +205,6 @@ def generate_dbt_project(
     # Create project structure with dynamic layers
     generator.create_project_structure(layers, sources_config)
     
-    # Create model.yml files for each layer
-    for layer in layers:
-        generator.create_model_yml(layer, models_config)
-    
     # Create models
     for model in models_config['models']:
         model_name = model['name']
@@ -322,47 +269,6 @@ if __name__ == "__main__":
                                 'tests': ['not_null']
                             }
                         ]
-                    }
-                ]
-            }
-        ]
-    }
-    
-    # Example models configuration with references
-    models_config = {
-        'models': [
-            {
-                'name': 'stg_customers',
-                'layer': 'staging',
-                'description': 'Staged customer data',
-                'sql': 'sql/staging/stg_customers.sql',
-                'config': {
-                    'materialized': 'view',
-                    'schema': 'staging'
-                },
-                'columns': [
-                    {
-                        'name': 'customer_id',
-                        'description': 'Unique customer identifier',
-                        'tests': ['unique', 'not_null']
-                    }
-                ]
-            },
-            {
-                'name': 'dim_customers',
-                'layer': 'mart',
-                'description': 'Customer dimension table',
-                'sql': 'sql/mart/dim_customers.sql',
-                'config': {
-                    'materialized': 'table',
-                    'schema': 'mart'
-                },
-                'refs': ['stg_customers'],
-                'columns': [
-                    {
-                        'name': 'customer_id',
-                        'description': 'Unique customer identifier',
-                        'tests': ['unique', 'not_null']
                     }
                 ]
             }
