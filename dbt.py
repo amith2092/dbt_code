@@ -3,6 +3,7 @@ import yaml
 from pathlib import Path
 from typing import Dict, Optional, List, Set
 import re
+import subprocess
 
 class DbtProjectGenerator:
     def __init__(self, project_name: str, project_dir: str):
@@ -19,45 +20,28 @@ class DbtProjectGenerator:
         
     def create_project_structure(self, layers: Set[str]):
         """
-        Creates the basic DBT project structure
+        Creates the basic DBT project structure using dbt init
         
         Args:
             layers: Set of layer names to create directories for
         """
-        # Create main project directories
-        base_dirs = [
-            'macros',
-            'tests',
-            'target',
-            'seeds',
-            'analyses',
-            'snapshots',
-            'configs',
-            'logs'
-        ]
+        # Create project directory if it doesn't exist
+        os.makedirs(self.project_dir, exist_ok=True)
         
-        # Create base directories
-        for dir_path in base_dirs:
-            os.makedirs(self.project_dir / dir_path, exist_ok=True)
-            
+        # Run dbt init
+        subprocess.run(['dbt', 'init', self.project_name], cwd=self.project_dir.parent)
+        
         # Create model directories for each layer
         for layer in layers:
             os.makedirs(self.project_dir / 'models' / layer, exist_ok=True)
             
-        # Create requirements.txt in configs directory
-        requirements_content = """dbt-core==1.7.10
-dbt-trino==1.7.1"""
-        
-        with open(self.project_dir / 'configs' / 'requirements.txt', 'w') as f:
-            f.write(requirements_content)
-            
-        # Create .dbt directory in the correct location
+        # Create profiles.yml in the correct location
         dbt_dir = Path('/opt/app-root/src/.dbt')
         dbt_dir.mkdir(parents=True, exist_ok=True)
             
         # Create profiles.yml in .dbt directory
         profiles_config = {
-            self.project_name: {  # Use project name from instance
+            self.project_name: {
                 'target': 'dev',
                 'outputs': {
                     'dev': {
@@ -78,39 +62,6 @@ dbt-trino==1.7.1"""
         with open(profiles_file, 'w') as f:
             yaml.dump(profiles_config, f, default_flow_style=False, sort_keys=False)
             
-        # Create dbt_project.yml
-        project_config = {
-            'name': self.project_name,  # Use project name from instance
-            'version': '1.0.0',
-            'config-version': 2,
-            'profile': self.project_name,  # Use project name from instance
-            
-            'target-path': 'target',
-            'clean-targets': [
-                'target',
-                'dbt_packages'
-            ],
-            
-            'model-paths': ['models'],
-            'seed-paths': ['seeds'],
-            'test-paths': ['tests'],
-            'analysis-paths': ['analyses'],
-            'macro-paths': ['macros'],
-            'snapshot-paths': ['snapshots'],
-            
-            'models': {
-                self.project_name: {  # Use project name from instance
-                    layer: {
-                        'materialized': 'table',
-                        'schema': layer
-                    } for layer in layers
-                }
-            }
-        }
-        
-        with open(self.project_dir / 'dbt_project.yml', 'w') as f:
-            yaml.dump(project_config, f, default_flow_style=False, sort_keys=False)
-            
     def create_model_from_sql(
         self,
         sql_content: str,
@@ -119,7 +70,7 @@ dbt-trino==1.7.1"""
         config: Optional[Dict] = None
     ) -> None:
         """
-        Creates a model file from SQL content
+        Creates a model file using dbt codegen
         
         Args:
             sql_content: SQL query content
@@ -130,16 +81,37 @@ dbt-trino==1.7.1"""
         # Clean model name
         model_name = re.sub(r'[^a-zA-Z0-9_]', '_', model_name)
         
-        # Prepare model content
-        model_content = []
+        # Create model directory if it doesn't exist
+        model_dir = self.project_dir / 'models' / layer
+        os.makedirs(model_dir, exist_ok=True)
+        
+        # Generate model using dbt codegen
+        model_path = model_dir / f'{model_name}.sql'
+        
+        # Write SQL content to temporary file
+        temp_sql_path = self.project_dir / 'temp.sql'
+        with open(temp_sql_path, 'w') as f:
+            f.write(sql_content)
+        
+        # Generate model using dbt codegen
+        subprocess.run([
+            'dbt', 'codegen', 
+            '--project-dir', str(self.project_dir),
+            '--profiles-dir', '/opt/app-root/src/.dbt',
+            '--target-path', str(self.project_dir / 'target'),
+            '--output', str(model_path),
+            '--sql', str(temp_sql_path)
+        ])
+        
+        # Clean up temporary file
+        os.remove(temp_sql_path)
         
         # Add config block if provided
         if config:
-            # Ensure schema is set based on layer if not specified
-            if 'schema' not in config:
-                config['schema'] = layer
-                
-            # Format config parameters with proper comma separation
+            with open(model_path, 'r') as f:
+                content = f.read()
+            
+            # Format config parameters
             config_params = []
             for key, value in config.items():
                 if isinstance(value, str):
@@ -150,19 +122,11 @@ dbt-trino==1.7.1"""
                     config_params.append(f"{key}={value}")
             
             config_str = ',\n    '.join(config_params)
-            model_content.extend([
-                '{{ config(',
-                f'    {config_str}',
-                ') }}'
-            ])
+            config_block = f"{{{{ config(\n    {config_str}\n) }}}}\n\n"
             
-        # Add SQL content
-        model_content.append(sql_content.strip())
-        
-        # Write model file
-        model_path = self.project_dir / 'models' / layer / f'{model_name}.sql'
-        with open(model_path, 'w') as f:
-            f.write('\n\n'.join(model_content))
+            # Write content with config block
+            with open(model_path, 'w') as f:
+                f.write(config_block + content)
 
 def generate_dbt_project(
     project_name: str,
@@ -231,8 +195,8 @@ if __name__ == "__main__":
     
     # Generate DBT project
     generate_dbt_project(
-        project_name="my_analytics",  # Use underscore in project name
+        project_name="my_analytics",
         project_dir="./my_dbt_project",
         models_config=models_config,
-        sql_base_dir="."  # Base directory containing SQL files
+        sql_base_dir="."
     )
