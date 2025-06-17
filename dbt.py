@@ -18,12 +18,59 @@ class DbtProjectGenerator:
         self.project_name = project_name.replace(' ', '_')
         self.project_dir = Path(project_dir)
         
-    def create_project_structure(self, layers: Set[str]):
+    def create_source_yml(self, sources_config: Dict):
+        """
+        Creates source.yml file with source definitions
+        
+        Args:
+            sources_config: Dictionary containing source configurations
+        """
+        source_yml_path = self.project_dir / 'models' / 'sources.yml'
+        
+        # Format sources configuration
+        sources_content = {
+            'version': 2,
+            'sources': []
+        }
+        
+        for source in sources_config.get('sources', []):
+            source_def = {
+                'name': source['name'],
+                'database': source.get('database', 'hive'),
+                'schema': source.get('schema', 'default'),
+                'tables': []
+            }
+            
+            for table in source.get('tables', []):
+                table_def = {
+                    'name': table['name'],
+                    'description': table.get('description', ''),
+                    'columns': []
+                }
+                
+                for column in table.get('columns', []):
+                    column_def = {
+                        'name': column['name'],
+                        'description': column.get('description', ''),
+                        'tests': column.get('tests', [])
+                    }
+                    table_def['columns'].append(column_def)
+                
+                source_def['tables'].append(table_def)
+            
+            sources_content['sources'].append(source_def)
+        
+        # Write source.yml file
+        with open(source_yml_path, 'w') as f:
+            yaml.dump(sources_content, f, default_flow_style=False, sort_keys=False)
+            
+    def create_project_structure(self, layers: Set[str], sources_config: Optional[Dict] = None):
         """
         Creates the basic DBT project structure using dbt init
         
         Args:
             layers: Set of layer names to create directories for
+            sources_config: Optional dictionary containing source configurations
         """
         # Create project directory if it doesn't exist
         os.makedirs(self.project_dir, exist_ok=True)
@@ -61,6 +108,10 @@ class DbtProjectGenerator:
         profiles_file = dbt_dir / 'profiles.yml'
         with open(profiles_file, 'w') as f:
             yaml.dump(profiles_config, f, default_flow_style=False, sort_keys=False)
+            
+        # Create source.yml if sources_config is provided
+        if sources_config:
+            self.create_source_yml(sources_config)
             
     def create_model_from_sql(
         self,
@@ -132,7 +183,8 @@ def generate_dbt_project(
     project_name: str,
     project_dir: str,
     models_config: Dict,
-    sql_base_dir: str
+    sql_base_dir: str,
+    sources_config: Optional[Dict] = None
 ) -> None:
     """
     Generates a DBT project from configuration and SQL files
@@ -142,6 +194,7 @@ def generate_dbt_project(
         project_dir: Directory where project will be created
         models_config: Dictionary containing model configurations
         sql_base_dir: Base directory containing SQL files
+        sources_config: Optional dictionary containing source configurations
     """
     # Initialize project generator
     generator = DbtProjectGenerator(project_name, project_dir)
@@ -150,7 +203,7 @@ def generate_dbt_project(
     layers = {model['layer'] for model in models_config['models']}
     
     # Create project structure with dynamic layers
-    generator.create_project_structure(layers)
+    generator.create_project_structure(layers, sources_config)
     
     # Create models
     for model in models_config['models']:
@@ -193,10 +246,40 @@ if __name__ == "__main__":
     # Load configuration from YAML file
     models_config = load_models_config('models.yml')
     
+    # Example sources configuration
+    sources_config = {
+        'sources': [
+            {
+                'name': 'raw_data',
+                'database': 'hive',
+                'schema': 'default',
+                'tables': [
+                    {
+                        'name': 'customers',
+                        'description': 'Raw customer data',
+                        'columns': [
+                            {
+                                'name': 'customer_id',
+                                'description': 'Unique customer identifier',
+                                'tests': ['unique', 'not_null']
+                            },
+                            {
+                                'name': 'customer_name',
+                                'description': 'Customer full name',
+                                'tests': ['not_null']
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    
     # Generate DBT project
     generate_dbt_project(
         project_name="my_analytics",
         project_dir="./my_dbt_project",
         models_config=models_config,
-        sql_base_dir="."
+        sql_base_dir=".",
+        sources_config=sources_config
     )
